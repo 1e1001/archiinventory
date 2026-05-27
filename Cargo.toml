@@ -1,0 +1,43 @@
+[package]
+name = "archiinventory"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies.archipelago_rs]
+version = "2.1.1"
+default-features = false
+features = ["native-tls"]
+
+[dependencies.eframe]
+version = "0.34.2"
+features = ["persistence"]
+
+#[dependencies.egui_extras]
+#version = "0.34.2"
+
+[dependencies.multiline-logger]
+version = "0.2.1"
+features = ["backtrace"]
+
+[dependencies.ciborium]
+version = "0.2.2"
+
+[dependencies.rfd]
+version = "0.17.2"
+
+[dependencies.anyhow]
+version = "1.0.102"
+
+[dependencies.z85]
+version = "3.0.7"
+
+[dependencies.serde]
+version = "1.0.228"
+features = ["derive"]
+
+#[dependencies.hashbrown]
+#version = "0.17.1"
+
+# for determining osstr compatibility
+[build-dependencies.rustc_version]
+version = "0.4.1"
