@@ -1,43 +1,59 @@
-[package]
-name = "archiinventory"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+resolver = "3"
+members = ["archiinventory", "archipelago_rs"]
 
-[dependencies.archipelago_rs]
-version = "2.1.1"
-default-features = false
-features = ["native-tls"]
+[workspace.lints.rust]
+# missing_docs = "deny"
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(rust_analyzer)'] }
 
-[dependencies.eframe]
-version = "0.34.2"
-features = ["persistence"]
+[workspace.lints.clippy]
+# pedantic
+pedantic = { level = "warn", priority = -1 }
+must_use_candidate = "allow"
+similar_names = "allow"
+allow_attributes_without_reason = "deny"
 
-#[dependencies.egui_extras]
-#version = "0.34.2"
-
-[dependencies.multiline-logger]
-version = "0.2.1"
-features = ["backtrace"]
-
-[dependencies.ciborium]
-version = "0.2.2"
-
-[dependencies.rfd]
-version = "0.17.2"
-
-[dependencies.anyhow]
-version = "1.0.102"
-
-[dependencies.z85]
-version = "3.0.7"
-
-[dependencies.serde]
-version = "1.0.228"
-features = ["derive"]
-
-#[dependencies.hashbrown]
-#version = "0.17.1"
-
-# for determining osstr compatibility
-[build-dependencies.rustc_version]
-version = "0.4.1"
+# restriction
+absolute_paths = "warn"
+alloc_instead_of_core = "warn"
+allow_attributes = "warn"
+as_underscore = "warn"
+assertions_on_result_states = "warn"
+clone_on_ref_ptr = "warn"
+dbg_macro = "warn"
+default_union_representation = "warn"
+empty_drop = "warn"
+empty_structs_with_brackets = "warn"
+filetype_is_file = "warn"
+fn_to_numeric_cast_any = "warn"
+format_push_string = "warn"
+get_unwrap = "warn"
+if_then_some_else_none = "warn"
+impl_trait_in_params = "warn"
+missing_assert_message = "warn"
+missing_asserts_for_indexing = "warn"
+multiple_inherent_impl = "warn"
+multiple_unsafe_ops_per_block = "warn"
+mutex_atomic = "warn"
+panic_in_result_fn = "warn"
+print_stderr = "warn"
+print_stdout = "warn"
+pub_without_shorthand = "warn"
+rc_buffer = "warn"
+rc_mutex = "warn"
+redundant_type_annotations = "warn"
+rest_pat_in_fully_bound_structs = "warn"
+semicolon_outside_block = "warn"
+shadow_unrelated = "warn"
+single_char_lifetime_names = "warn"
+str_to_string = "warn"
+implicit_clone = "warn"
+tests_outside_test_module = "warn"
+todo = "warn"
+try_err = "warn"
+undocumented_unsafe_blocks = "warn"
+unnecessary_safety_comment = "warn"
+unnecessary_safety_doc = "warn"
+unneeded_field_pattern = "warn"
+unseparated_literal_suffix = "warn"
+unwrap_in_result = "warn"

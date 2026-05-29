@@ -10,19 +10,17 @@ use crate::ui::App;
 
 const APP_ID: &str = "archiinventory";
 
-mod ui;
-mod world;
 mod conn;
+mod data;
+mod ui;
 
 fn main() -> eframe::Result {
 	multiline_logger::Settings {
 		title: APP_ID,
 		filters: &[
-			("egui", log::LevelFilter::Info),
-			("eframe", log::LevelFilter::Info),
-			("wgpu", log::LevelFilter::Info),
-			("naga", log::LevelFilter::Info),
-			("", log::LevelFilter::Trace),
+			//("archipelago_rs", log::LevelFilter::Trace),
+			("archiinventory", log::LevelFilter::Trace),
+			("", log::LevelFilter::Info),
 		],
 		file_out: None,
 		console_out: true,
@@ -45,7 +43,9 @@ fn main() -> eframe::Result {
 	.init();
 	let options = eframe::NativeOptions {
 		// TODO: add my own icon
-		viewport: egui::ViewportBuilder::default().with_icon(egui::IconData::default()),
+		viewport: egui::ViewportBuilder::default()
+			.with_icon(egui::IconData::default())
+			.with_app_id(APP_ID),
 		..Default::default()
 	};
 	eframe::run_native(APP_ID, options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
