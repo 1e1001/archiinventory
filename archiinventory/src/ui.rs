@@ -527,6 +527,7 @@ impl App {
 				self.world_dirty = false;
 				self.world_focus = 0;
 				self.world = World::default();
+				self.refresh_window_title(ui);
 			}
 			if (ui.button("Open").clicked() || open)
 				&& let Some(path) = self
@@ -542,6 +543,7 @@ impl App {
 							self.world_dirty = false;
 							self.world_focus = 0;
 							self.world = new_world;
+							self.refresh_window_title(ui);
 						}
 					}
 					Err(err) => {
