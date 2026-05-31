@@ -83,6 +83,7 @@ async fn run(
 			name: slot.name,
 			id: slot.id,
 			ui_data_stale: false,
+			confirmed: slot.confirmed,
 			game: client.this_game().name(),
 			inventory: client
 				.received_items()
@@ -105,7 +106,7 @@ async fn run(
 		drop(client);
 		log::debug!("disconnected??");
 	}
-	Ok((result, time))
+	Ok(result)
 }
 
 pub struct Connection {

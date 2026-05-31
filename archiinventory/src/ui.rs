@@ -144,9 +144,10 @@ impl SlotView {
 		slot: &mut WorldSlot,
 		slot_index: &mut usize,
 		slot_count: usize,
-		latest_time: u64,
 		ui: &mut egui::Ui,
-	) {
+		dialog_filepicker_csv: impl Fn() -> rfd::FileDialog,
+	) -> bool {
+		// data caching
 		if slot.id != self.slot_id || slot.ui_data_stale {
 			// reload item data
 			slot.ui_data_stale = false;
@@ -164,7 +165,7 @@ impl SlotView {
 					items: Vec::new(),
 				});
 				cluster.count += 1;
-				if item.time == latest_time {
+				if item.time > slot.confirmed {
 					cluster.recent_count += 1;
 				}
 				if item.progression {
@@ -182,98 +183,147 @@ impl SlotView {
 			self.items.sort_by_key(|i| i.name);
 			self.filtered_indexes = (0..self.items.len()).collect();
 		}
-		ui.horizontal(|ui| {
-			if ui
-				.add_enabled(*slot_index > 0, egui::Button::new("<"))
-				.clicked()
-			{
-				*slot_index -= 1;
-			}
-			if ui
-				.add_enabled(*slot_index + 1 < slot_count, egui::Button::new(">"))
-				.clicked()
-			{
-				*slot_index += 1;
-			}
-			ui.heading(&slot.name);
+		let mut modified = false;
+		// ui
+		egui::Panel::top("slot").show_inside(ui, |ui| {
+			ui.horizontal(|ui| {
+				if ui
+					.add_enabled(*slot_index > 0, egui::Button::new("<"))
+					.clicked()
+				{
+					*slot_index -= 1;
+				}
+				if ui
+					.add_enabled(*slot_index + 1 < slot_count, egui::Button::new(">"))
+					.clicked()
+				{
+					*slot_index += 1;
+				}
+				if ui
+					.button("Confirm")
+					.on_hover_ui(|ui| _ = ui.label("Confirm all recently added items"))
+					.clicked()
+				{
+					// inventory is primarily sorted by time
+					slot.confirmed = slot
+						.inventory
+						.last()
+						.map(|item| item.time)
+						.unwrap_or_default();
+					modified = true;
+					for item in &mut self.items {
+						item.recent_count = 0;
+					}
+					// TODO: resort if sorting by recent
+				}
+				if ui
+					.button("Export")
+					.on_hover_ui(|ui| _ = ui.label("Export CSV table of current slot items"))
+					.clicked() && let Some(path) = dialog_filepicker_csv()
+					.set_title("Export slot table")
+					.set_file_name(format!("{}.csv", slot.name))
+					.save_file() && let Err(err) = slot.save_table(path)
+				{
+					dialog_error("Failed to export table", &err);
+				}
+				if ui
+					.button("Import")
+					.on_hover_ui(|ui| _ = ui.label("Import CSV table for slot items"))
+					.clicked() && let Some(path) = dialog_filepicker_csv()
+					.set_title("Export slot table")
+					.pick_file()
+				{
+					// we need to get length before showing dialog
+					match WorldSlot::load_table(slot.game, path) {
+						Ok((new_game, new_inventory)) => {
+							if slot.inventory.is_empty()
+								|| dialog_overwrite_table(
+									&slot.name,
+									&slot.game,
+									slot.inventory.len(),
+									&new_game,
+									new_inventory.len(),
+								) {
+								slot.inventory = new_inventory;
+								slot.game = new_game;
+								slot.ui_data_stale = true;
+								modified = true;
+							}
+						}
+						Err(err) => dialog_error("Failed to import table", &err),
+					}
+				}
+			});
 		});
-		egui_extras::TableBuilder::new(ui)
-			.striped(true)
-			.cell_layout(egui::Layout::default().with_cross_align(egui::Align::RIGHT))
-			.column(egui_extras::Column::auto())
-			.column(egui_extras::Column::auto())
-			.column(egui_extras::Column::auto())
-			.column(egui_extras::Column::auto())
-			.column(egui_extras::Column::auto())
-			.column(egui_extras::Column::auto())
-			.column(egui_extras::Column::remainder())
-			.header(20.0, |mut header| {
-				header.col(|_ui| {});
-				header.col(|ui| {
-					ui.horizontal(|ui| {
-						ui.button("S");
+		egui::CentralPanel::default().show_inside(ui, |ui| {
+			ui.heading(format!("{} ({})", slot.name, slot.game));
+			// TODO: column for most recent time?
+			egui_extras::TableBuilder::new(ui)
+				.striped(true)
+				.cell_layout(egui::Layout::default().with_cross_align(egui::Align::RIGHT))
+				.column(egui_extras::Column::auto())
+				.column(egui_extras::Column::auto())
+				.column(egui_extras::Column::auto())
+				.column(egui_extras::Column::auto())
+				.column(egui_extras::Column::auto())
+				.column(egui_extras::Column::auto())
+				.column(egui_extras::Column::remainder())
+				.header(20.0, |mut header| {
+					header.col(|ui| {
+						// match spacing when there are no items
+						ui.add_visible(false, egui::Button::new("V"));
+					});
+					header.col(|ui| {
 						ui.label("Count");
 					});
-				});
-				header.col(|ui| {
-					ui.horizontal(|ui| {
-						ui.button("S");
+					header.col(|ui| {
 						ui.label("New");
 					});
-				});
-				header.col(|ui| {
-					ui.horizontal(|ui| {
-						ui.button("S");
-						ui.label("Prog.");
+					header.col(|ui| {
+						ui.label("Prog.%");
 					});
-				});
-				header.col(|ui| {
-					ui.horizontal(|ui| {
-						ui.button("S");
-						ui.label("Useful");
+					header.col(|ui| {
+						ui.label("Useful%");
 					});
-				});
-				header.col(|ui| {
-					ui.horizontal(|ui| {
-						ui.button("S");
-						ui.label("Trap");
+					header.col(|ui| {
+						ui.label("Trap%");
 					});
-				});
-				header.col(|ui| {
-					ui.with_layout(egui::Layout::default(), |ui| {
-						ui.horizontal(|ui| {
-							ui.label("Name");
-							ui.button("S");
-						});
-					});
-				});
-			})
-			.body(|body| {
-				body.rows(20.0, self.filtered_indexes.len(), |mut row| {
-					#[expect(clippy::cast_precision_loss, reason = "interface")]
-					fn percent(i: usize, t: usize) -> String {
-						format!("{:.0}%", 100.0 * i as f32 / t as f32)
-					}
-					let item = &self.items[self.filtered_indexes[row.index()]];
-					row.col(|ui| _ = ui.button("V"));
-					row.col(|ui| _ = ui.label(format!("{}", item.count)));
-					row.col(|ui| {
-						ui.label(if item.recent_count == 0 {
-							String::new()
-						} else {
-							format!("+{}", item.recent_count)
-						});
-					});
-					row.col(|ui| _ = ui.label(percent(item.progression, item.count)));
-					row.col(|ui| _ = ui.label(percent(item.useful, item.count)));
-					row.col(|ui| _ = ui.label(percent(item.trap, item.count)));
-					row.col(|ui| {
+					header.col(|ui| {
 						ui.with_layout(egui::Layout::default(), |ui| {
-							ui.label(&*item.name);
+							ui.label("Name");
 						});
 					});
+				})
+				.body(|body| {
+					body.rows(20.0, self.filtered_indexes.len(), |mut row| {
+						#[expect(clippy::cast_precision_loss, reason = "interface")]
+						fn percent(i: usize, t: usize) -> String {
+							format!("{:.0}%", 100.0 * i as f32 / t as f32)
+						}
+						let item = &self.items[self.filtered_indexes[row.index()]];
+						row.col(|ui| _ = ui.button("V"));
+						row.col(|ui| _ = ui.label(format!("{}", item.count)));
+						row.col(|ui| {
+							ui.label(if item.recent_count == 0 {
+								String::new()
+							} else {
+								format!("+{}", item.recent_count)
+							});
+						});
+						row.col(|ui| _ = ui.label(percent(item.progression, item.count)));
+						row.col(|ui| _ = ui.label(percent(item.useful, item.count)));
+						row.col(|ui| _ = ui.label(percent(item.trap, item.count)));
+						row.col(|ui| {
+							ui.with_layout(egui::Layout::default(), |ui| {
+								ui.label(&*item.name);
+							});
+						});
+					});
+					// TODO: add half-screen overscroll like slot list
+					// might require modifying table
 				});
-			});
+		});
+		modified
 	}
 }
 
@@ -317,21 +367,17 @@ impl App {
 				}
 			})
 			.unzip();
-		let world = world.unwrap_or_default();
-		cc.egui_ctx
-			.send_viewport_cmd(egui::ViewportCommand::Title(format!(
-				"{} - archiinventory",
-				world.name
-			)));
-		Self {
+		let mut app = Self {
 			storage_dir,
-			world,
+			world: world.unwrap_or_default(),
 			world_path,
 			world_dirty: false,
 			world_focus: None,
 			slot_view: SlotView::default(),
 			connection: None,
-		}
+		};
+		app.refresh_window_title(&cc.egui_ctx);
+		app
 	}
 	fn save_world(&mut self, ui: &mut egui::Ui) {
 		log::info!("Saving world");
@@ -346,29 +392,24 @@ impl App {
 			self.refresh_window_title(ui);
 		}
 	}
-	fn dialog_filepicker_base(&self) -> rfd::FileDialog {
-		rfd::FileDialog::new().set_directory(
-			self.world_path
-				.as_deref()
-				.and_then(Path::parent)
-				.unwrap_or(&self.storage_dir),
-		)
+	fn dialog_filepicker_base(world_path: Option<&Path>, storage_dir: &Path) -> rfd::FileDialog {
+		rfd::FileDialog::new()
+			.set_directory(world_path.and_then(Path::parent).unwrap_or(storage_dir))
 	}
 	fn dialog_filepicker_ainv(&self) -> rfd::FileDialog {
-		self.dialog_filepicker_base()
+		Self::dialog_filepicker_base(self.world_path.as_deref(), &self.storage_dir)
 			.add_filter("archiinventory world", &["ainv", "json"])
 	}
-	fn dialog_filepicker_csv(&self) -> rfd::FileDialog {
-		self.dialog_filepicker_base()
-			.add_filter("CSV table", &["csv"])
+	fn dialog_filepicker_csv(world_path: Option<&Path>, storage_dir: &Path) -> rfd::FileDialog {
+		Self::dialog_filepicker_base(world_path, storage_dir).add_filter("CSV table", &["csv"])
 	}
-	fn modified_world(&mut self, ui: &mut egui::Ui) {
+	fn modified_world(&mut self, ctx: &egui::Context) {
 		if !replace(&mut self.world_dirty, true) {
-			self.refresh_window_title(ui);
+			self.refresh_window_title(ctx);
 		}
 	}
-	fn refresh_window_title(&mut self, ui: &mut egui::Ui) {
-		ui.send_viewport_cmd(egui::ViewportCommand::Title(format!(
+	fn refresh_window_title(&mut self, ctx: &egui::Context) {
+		ctx.send_viewport_cmd(egui::ViewportCommand::Title(format!(
 			"{}{} - archiinventory",
 			self.world.name,
 			if self.world_dirty { "*" } else { "" }
@@ -448,7 +489,83 @@ impl App {
 			response.request_focus();
 		}
 	}
-	fn panel_hack_ui(&mut self, ui: &mut egui::Ui) {
+	fn panel_hack_top_ui(&mut self, ui: &mut egui::Ui) {
+		// world file management
+		ui.horizontal(|ui| {
+			if ui.button("New").clicked() && (!self.world_dirty || dialog_overwrite_unsaved()) {
+				log::info!("Resetting world");
+				self.world_path = None;
+				self.world_dirty = false;
+				self.world_focus = None;
+				self.world = World::default();
+			}
+			if ui.button("Open").clicked()
+				&& let Some(path) = self
+					.dialog_filepicker_ainv()
+					.set_title("Open world file")
+					.pick_file()
+			{
+				match World::load(&path) {
+					Ok(new_world) => {
+						if !self.world_dirty || dialog_overwrite_unsaved() {
+							log::info!("Loading world");
+							self.world_path = Some(path);
+							self.world_dirty = false;
+							self.world_focus = None;
+							self.world = new_world;
+						}
+					}
+					Err(err) => {
+						dialog_error("Failed to open world", &err);
+					}
+				}
+			}
+			if ui
+				.add_enabled(self.world_path.is_some(), egui::Button::new("Save"))
+				.on_hover_ui(|ui| {
+					ui.horizontal(|ui| {
+						ui.spacing_mut().item_spacing.x = 0.0;
+						ui.label("to ");
+						ui.horizontal_wrapped(|ui| {
+							ui.spacing_mut().item_spacing.x = 0.0;
+							for segment in self
+								.world_path
+								.as_ref()
+								.unwrap_or(&PathBuf::new())
+								.to_string_lossy()
+								.split_inclusive(SEPARATORS)
+							{
+								ui.label(segment);
+							}
+						});
+					});
+				})
+				.clicked()
+			{
+				self.save_world(ui);
+			}
+			if ui.button("Save As").clicked()
+				&& let Some(path) = self
+					.dialog_filepicker_ainv()
+					.set_title("Save world file")
+					.set_file_name(format!("{}.ainv", self.world.name))
+					.save_file()
+			{
+				self.world_path = Some(path);
+				self.save_world(ui);
+			}
+			//ui.add_space(8.0);
+			//if ui.button("Help").clicked() {
+			//	rfd::MessageDialog::new()
+			//		.set_title("Help - archiinventory")
+			//		.set_description("good luck :)")
+			//		.set_level(rfd::MessageLevel::Info)
+			//		.set_buttons(rfd::MessageButtons::YesNo)
+			//		.show();
+			//}
+		});
+	}
+	fn panel_hack_bottom_ui(&mut self, ui: &mut egui::Ui) {
 		ui.horizontal(|ui| {
 			if let Some(conn) = &mut self.connection
 				&& conn.is_running()
@@ -491,130 +608,6 @@ impl App {
 					.send_viewport_cmd(egui::ViewportCommand::CancelClose),
 			}
 		}
-		egui::Panel::top("t").show_inside(ui, |ui| {
-			// world file management
-			ui.horizontal(|ui| {
-				if ui.button("New").clicked() && (!self.world_dirty || dialog_overwrite_unsaved()) {
-					log::info!("Resetting world");
-					self.world_path = None;
-					self.world_dirty = false;
-					self.world_focus = None;
-					self.world = World::default();
-				}
-				if ui.button("Open").clicked()
-					&& let Some(path) = self
-						.dialog_filepicker_ainv()
-						.set_title("Open world file")
-						.pick_file()
-				{
-					match World::load(&path) {
-						Ok(new_world) => {
-							if !self.world_dirty || dialog_overwrite_unsaved() {
-								log::info!("Loading world");
-								self.world_path = Some(path);
-								self.world_dirty = false;
-								self.world_focus = None;
-								self.world = new_world;
-							}
-						}
-						Err(err) => {
-							dialog_error("Failed to open world", &err);
-						}
-					}
-				}
-				if ui
-					.add_enabled(self.world_path.is_some(), egui::Button::new("Save"))
-					.on_hover_ui(|ui| {
-						ui.horizontal(|ui| {
-							ui.spacing_mut().item_spacing.x = 0.0;
-							ui.label("to ");
-							ui.horizontal_wrapped(|ui| {
-								ui.spacing_mut().item_spacing.x = 0.0;
-								for segment in self
-									.world_path
-									.as_ref()
-									.unwrap_or(&PathBuf::new())
-									.to_string_lossy()
-									.split_inclusive(SEPARATORS)
-								{
-									ui.label(segment);
-								}
-							});
-						});
-					})
-					.clicked()
-				{
-					self.save_world(ui);
-				}
-				if ui.button("Save As").clicked()
-					&& let Some(path) = self
-						.dialog_filepicker_ainv()
-						.set_title("Save world file")
-						.set_file_name(format!("{}.ainv", self.world.name))
-						.save_file()
-				{
-					self.world_path = Some(path);
-					self.save_world(ui);
-				}
-				ui.add_space(8.0);
-				let valid_slot = self
-					.world_focus
-					.is_some_and(|slot| self.world.slots.get(slot).is_some());
-				if ui
-					.add_enabled(valid_slot, egui::Button::new("Export"))
-					.on_hover_ui(|ui| _ = ui.label("Export CSV table of current slot items"))
-					.clicked()
-				{
-					let focused_slot = &self.world.slots[self.world_focus.unwrap()];
-					if let Some(path) = self
-						.dialog_filepicker_csv()
-						.set_title("Export slot table")
-						.set_file_name(format!("{}.csv", focused_slot.name))
-						.save_file() && let Err(err) = focused_slot.save_table(path)
-					{
-						dialog_error("Failed to export table", &err);
-					}
-				}
-				if ui
-					.add_enabled(valid_slot, egui::Button::new("Import"))
-					.on_hover_ui(|ui| _ = ui.label("Import CSV table for slot items"))
-					.clicked() && let Some(path) = self
-					.dialog_filepicker_csv()
-					.set_title("Export slot table")
-					.pick_file()
-				{
-					let focused_slot = &mut self.world.slots[self.world_focus.unwrap()];
-					// we need to get length before showing dialog
-					match WorldSlot::load_table(focused_slot.game, path) {
-						Ok((new_game, new_inventory)) => {
-							if focused_slot.inventory.is_empty()
-								|| dialog_overwrite_table(
-									&focused_slot.name,
-									&focused_slot.game,
-									focused_slot.inventory.len(),
-									&new_game,
-									new_inventory.len(),
-								) {
-								focused_slot.inventory = new_inventory;
-								focused_slot.game = new_game;
-								focused_slot.ui_data_stale = true;
-								self.modified_world(ui);
-							}
-						}
-						Err(err) => dialog_error("Failed to import table", &err),
-					}
-				}
-				ui.add_space(8.0);
-				if ui.button("Help").clicked() {
-					rfd::MessageDialog::new()
-						.set_title("Help - archiinventory")
-						.set_description("good luck :)")
-						.set_level(rfd::MessageLevel::Info)
-						.set_buttons(rfd::MessageButtons::YesNo)
-						.show();
-				}
-			});
-		});
 		egui::Panel::left("world")
 			.resizable(true)
 			.frame(egui::Frame::central_panel(ui.style()).inner_margin(egui::Margin::ZERO))
@@ -623,23 +616,32 @@ impl App {
 				struct PanelHack<'app>(&'app mut App);
 				impl egui::Widget for PanelHack<'_> {
 					fn ui(self, ui: &mut egui::Ui) -> egui::Response {
-						let mut res = egui::Panel::bottom("connect")
+						let top_res = egui::Panel::top("management")
 							.show_inside(ui, |ui| {
-								self.0.panel_hack_ui(ui);
+								self.0.panel_hack_top_ui(ui);
 							})
 							.response;
-						res.rect = ui.cursor();
+						let mut res = egui::Panel::bottom("connect")
+							.show_inside(ui, |ui| {
+								self.0.panel_hack_bottom_ui(ui);
+							})
+							.response;
+						// awful result packing
+						res.rect.min.x = ui.cursor().height();
+						res.rect.min.y = ui.cursor().min.y;
+						res.rect.max.x = top_res.rect.width();
 						res
 					}
 				}
 				let screen_size = ui.available_size();
 				let style_item_spacing_y = ui.style().spacing.item_spacing.y;
 				let response = ui.place(ui.max_rect(), PanelHack(self));
-				ui.add_space(-style_item_spacing_y);
+				ui.set_min_width(response.rect.max.x);
+				ui.add_space(response.rect.min.y - style_item_spacing_y);
 
 				// world setup (connection info & slot names)
 				egui::ScrollArea::vertical()
-					.max_height(response.rect.height())
+					.max_height(response.rect.min.x)
 					.content_margin(egui::Margin::same(8))
 					.show(ui, |ui| {
 						let mut modified = false;
@@ -813,17 +815,20 @@ impl App {
 						ui.allocate_space(egui::vec2(0.0, screen_size.y / 2.0));
 					});
 			});
-		egui::CentralPanel::default().show_inside(ui, |ui| {
-			let slot_count = self.world.slots.len();
-			if let Some(slot_index) = &mut self.world_focus
-				&& let Some(slot) = self.world.slots.get_mut(*slot_index)
-			{
-				self.slot_view
-					.ui(slot, slot_index, slot_count, self.world.latest, ui);
-			} else {
-				ui.heading("No slot selected");
+		let slot_count = self.world.slots.len();
+		if let Some(slot_index) = &mut self.world_focus
+			&& let Some(slot) = self.world.slots.get_mut(*slot_index)
+		{
+			if self.slot_view.ui(slot, slot_index, slot_count, ui, || {
+				Self::dialog_filepicker_csv(self.world_path.as_deref(), &self.storage_dir)
+			}) {
+				self.modified_world(ui);
 			}
-		});
+		} else {
+			egui::CentralPanel::default().show_inside(ui, |ui| {
+				ui.heading("No slot selected");
+			});
+		}
 	}
 }
 impl eframe::App for App {

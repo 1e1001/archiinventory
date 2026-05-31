@@ -120,11 +120,13 @@ impl Default for InstanceLocalId {
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct WorldSlot {
+	// TODO: additional setting to enable fetching slot (e.g. completed?)
 	pub name: String,
 	#[serde(skip)]
 	pub id: InstanceLocalId,
 	#[serde(skip)]
 	pub ui_data_stale: bool,
+	pub confirmed: u64,
 	// if game changes between runs, our item list is kinda useless
 	pub game: Ustr,
 	// should always be sorted
@@ -137,6 +139,7 @@ impl WorldSlot {
 			name: self.name.clone(),
 			id: self.id,
 			ui_data_stale: false,
+			confirmed: self.confirmed,
 			game: self.game,
 			// connection reports new inventory back to main thread
 			inventory: Vec::new(),
@@ -182,14 +185,11 @@ pub struct World {
 	pub address: String,
 	pub password: String,
 	pub slots: Vec<WorldSlot>,
-	// timestamp of most recent update
-	// TODO: replace with a manual acknowledgement
-	pub latest: u64,
 	// list of games to ignore locations for, until archipelago_rs can properly handle them
 	pub banished_games: Option<Vec<String>>,
 }
 
-pub type MergeSlots = (Vec<WorldSlot>, u64);
+pub type MergeSlots = Vec<WorldSlot>;
 
 impl World {
 	pub fn clone_for_conn(&self) -> Self {
@@ -198,14 +198,13 @@ impl World {
 			address: self.address.clone(),
 			password: self.password.clone(),
 			slots: self.slots.iter().map(WorldSlot::clone_for_conn).collect(),
-			latest: self.latest,
 			banished_games: self.banished_games.clone(),
 		}
 	}
 	/// add new items, returns true if something happened
 	pub fn merge_interactive<F: FnMut(String) -> bool>(
 		&mut self,
-		(new_slots, new_time): MergeSlots,
+		new_slots: MergeSlots,
 		mut confirm: F,
 	) -> bool {
 		// user might've modified slots while connected, so merge based on ids instead of names
@@ -267,9 +266,6 @@ impl World {
 			} else {
 				// we have no items for this slot
 			}
-		}
-		if any_slots_modified {
-			self.latest = new_time;
 		}
 		any_slots_modified
 	}
