@@ -828,6 +828,9 @@ impl App {
 								.as_deref()
 								.unwrap_or_default()
 								.join("\n");
+							if !data.is_empty() {
+								data.push('\n');
+							}
 							ui.label("DEBUG banished_games:");
 							if ui.text_edit_multiline(&mut data).changed() {
 								let list = data
