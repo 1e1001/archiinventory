@@ -1,5 +1,4 @@
 use std::ffi::OsString;
-use std::fs::read_to_string;
 use std::mem::replace;
 use std::path::{Path, PathBuf, SEPARATORS};
 
@@ -671,7 +670,7 @@ impl App {
 				let screen_size = ui.available_size();
 				let style_item_spacing_y = ui.style().spacing.item_spacing.y;
 				let response = ui.place(ui.max_rect(), PanelHack(self));
-				ui.set_min_width(response.rect.max.x, min(ui.max_rect().width()));
+				ui.set_min_width(response.rect.max.x.min(ui.max_rect().width()));
 				ui.add_space(response.rect.min.y - style_item_spacing_y);
 
 				// world setup (connection info & slot names)
@@ -812,39 +811,50 @@ impl App {
 								}
 								// do not add any more elements here, they will be invisible
 							});
-						if ui
-							.add_visible(
-								ui.input(|input| input.modifiers.alt),
-								egui::Button::new(format!(
-									"Debug: banished_games = {:?}",
-									self.world.banished_games.as_deref().unwrap_or_default()
-								)),
-							)
-							.clicked() && let Some(path) = {
-							rfd::FileDialog::new()
-								.add_filter("text", &["txt"])
-								.set_directory(
-									self.world_path
-										.as_deref()
-										.and_then(Path::parent)
-										.unwrap_or(&self.storage_dir),
-								)
-						}
-						.pick_file()
-						{
-							match read_to_string(path) {
-								Ok(data) => {
-									let list = data
-										.split('\n')
-										.filter(|line| !line.is_empty())
-										.map(String::from)
-										.collect::<Vec<_>>();
-									self.world.banished_games = (!list.is_empty()).then_some(list);
-									modified = true;
-								}
-								Err(err) => dialog_error("", &err.into()),
+						if ui.input(|input| input.modifiers.alt) {
+							let mut data = self
+								.world
+								.banished_games
+								.as_deref()
+								.unwrap_or_default()
+								.join("\n");
+							ui.label("DEBUG banished_games:");
+							if ui.text_edit_multiline(&mut data).changed() {
+								let list = data
+									.split('\n')
+									.filter(|line| !line.is_empty())
+									.map(String::from)
+									.collect::<Vec<_>>();
+								self.world.banished_games = (!list.is_empty()).then_some(list);
+								modified = true;
 							}
 						}
+						//if ui
+						//	.add_visible(
+						//		,
+						//		egui::Button::new(format!(
+						//			"Debug: banished_games = {:?}",
+						//			self.world.banished_games.as_deref().unwrap_or_default()
+						//		)),
+						//	)
+						//	.clicked() && let Some(path) = {
+						//	rfd::FileDialog::new()
+						//		.add_filter("text", &["txt"])
+						//		.set_directory(
+						//			self.world_path
+						//				.as_deref()
+						//				.and_then(Path::parent)
+						//				.unwrap_or(&self.storage_dir),
+						//		)
+						//}
+						//.pick_file()
+						//{
+						//	match read_to_string(path) {
+						//		Ok(data) => {
+						//		}
+						//		Err(err) => dialog_error("", &err.into()),
+						//	}
+						//}
 						if modified {
 							self.modified_world(ui);
 						}
