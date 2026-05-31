@@ -3,3 +3,6 @@ target/
 **/*.rs.bk
 *.pdb
 .vs/
+
+# TODO: get rid of this somehow
+archipelago_rs/
