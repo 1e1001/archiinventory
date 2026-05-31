@@ -14,6 +14,25 @@ use crate::data::{InstanceLocalId, World, WorldItem, WorldSlot};
 
 const OSSTR_VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/osstr.txt"));
 
+const SHORTCUT_NEW: egui::KeyboardShortcut =
+	egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::N);
+const SHORTCUT_OPEN: egui::KeyboardShortcut =
+	egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::O);
+const SHORTCUT_SAVE: egui::KeyboardShortcut =
+	egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::S);
+const SHORTCUT_SAVE_AS: egui::KeyboardShortcut = egui::KeyboardShortcut::new(
+	egui::Modifiers::CTRL.plus(egui::Modifiers::SHIFT),
+	egui::Key::S,
+);
+const SHORTCUT_SLOT_PREV: egui::KeyboardShortcut =
+	egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::ArrowLeft);
+const SHORTCUT_SLOT_NEXT: egui::KeyboardShortcut =
+	egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::ArrowRight);
+const SHORTCUT_SLOT_EXPORT: egui::KeyboardShortcut =
+	egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::E);
+const SHORTCUT_SLOT_IMPORT: egui::KeyboardShortcut =
+	egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::I);
+
 fn encode_path(path: &Path) -> String {
 	let mut res = z85::encode(path.as_os_str().as_encoded_bytes());
 	res.insert_str(0, OSSTR_VERSION);
@@ -187,23 +206,27 @@ impl SlotView {
 		// ui
 		egui::Panel::top("slot").show_inside(ui, |ui| {
 			ui.horizontal(|ui| {
+				let (prev, next, export, import) = ui.input_mut(|input| {
+					(
+						input.consume_shortcut(&SHORTCUT_SLOT_PREV),
+						input.consume_shortcut(&SHORTCUT_SLOT_NEXT),
+						input.consume_shortcut(&SHORTCUT_SLOT_EXPORT),
+						input.consume_shortcut(&SHORTCUT_SLOT_IMPORT),
+					)
+				});
 				if ui
 					.add_enabled(*slot_index > 0, egui::Button::new("<"))
-					.clicked()
+					.clicked() || (prev && *slot_index > 0)
 				{
 					*slot_index -= 1;
 				}
 				if ui
 					.add_enabled(*slot_index + 1 < slot_count, egui::Button::new(">"))
-					.clicked()
+					.clicked() || (next && *slot_index + 1 < slot_count)
 				{
 					*slot_index += 1;
 				}
-				if ui
-					.button("Confirm")
-					.on_hover_ui(|ui| _ = ui.label("Confirm all recently added items"))
-					.clicked()
-				{
+				if ui.button("Confirm").clicked() {
 					// inventory is primarily sorted by time
 					slot.confirmed = slot
 						.inventory
@@ -216,22 +239,24 @@ impl SlotView {
 					}
 					// TODO: resort if sorting by recent
 				}
-				if ui
+				if (ui
 					.button("Export")
 					.on_hover_ui(|ui| _ = ui.label("Export CSV table of current slot items"))
-					.clicked() && let Some(path) = dialog_filepicker_csv()
-					.set_title("Export slot table")
-					.set_file_name(format!("{}.csv", slot.name))
-					.save_file() && let Err(err) = slot.save_table(path)
+					.clicked() || export)
+					&& let Some(path) = dialog_filepicker_csv()
+						.set_title("Export slot table")
+						.set_file_name(format!("{}.csv", slot.name))
+						.save_file() && let Err(err) = slot.save_table(path)
 				{
 					dialog_error("Failed to export table", &err);
 				}
-				if ui
+				if (ui
 					.button("Import")
 					.on_hover_ui(|ui| _ = ui.label("Import CSV table for slot items"))
-					.clicked() && let Some(path) = dialog_filepicker_csv()
-					.set_title("Export slot table")
-					.pick_file()
+					.clicked() || import)
+					&& let Some(path) = dialog_filepicker_csv()
+						.set_title("Export slot table")
+						.pick_file()
 				{
 					// we need to get length before showing dialog
 					match WorldSlot::load_table(slot.game, path) {
@@ -332,7 +357,7 @@ pub struct App {
 	world_path: Option<PathBuf>,
 	world: World,
 	world_dirty: bool,
-	world_focus: Option<usize>,
+	world_focus: usize,
 	slot_view: SlotView,
 	connection: Option<Connection>,
 }
@@ -372,7 +397,7 @@ impl App {
 			world: world.unwrap_or_default(),
 			world_path,
 			world_dirty: false,
-			world_focus: None,
+			world_focus: 0,
 			slot_view: SlotView::default(),
 			connection: None,
 		};
@@ -422,7 +447,7 @@ impl App {
 		ui: &mut egui::Ui,
 		action: &mut SlotAction,
 		modified: &mut bool,
-		world_focus: &mut Option<usize>,
+		world_focus: &mut usize,
 		last: usize,
 		i: usize,
 		slot: &mut WorldSlot,
@@ -434,10 +459,8 @@ impl App {
 				.clicked() && (slot.inventory.is_empty() || dialog_delete_slot())
 			{
 				*action = SlotAction::Delete(i);
-				if let Some(focus) = world_focus
-					&& *focus > i
-				{
-					*focus -= 1;
+				if *world_focus > i {
+					*world_focus -= 1;
 				}
 			}
 			if ui
@@ -446,12 +469,10 @@ impl App {
 				.clicked()
 			{
 				*action = SlotAction::Swap(i - 1, i);
-				if let Some(focus) = world_focus {
-					if *focus == i {
-						*focus -= 1;
-					} else if *focus == i - 1 {
-						*focus += 1;
-					}
+				if *world_focus == i {
+					*world_focus -= 1;
+				} else if *world_focus == i - 1 {
+					*world_focus += 1;
 				}
 			}
 			if ui
@@ -460,21 +481,19 @@ impl App {
 				.clicked()
 			{
 				*action = SlotAction::Swap(i, i + 1);
-				if let Some(focus) = world_focus {
-					if *focus == i {
-						*focus += 1;
-					} else if *focus == i + 1 {
-						*focus -= 1;
-					}
+				if *world_focus == i {
+					*world_focus += 1;
+				} else if *world_focus == i + 1 {
+					*world_focus -= 1;
 				}
 			}
 			// TODO: should focus instead be by last selected textbox?
 			if ui
-				.add_enabled(*world_focus != Some(i), egui::Button::new("V"))
+				.add_enabled(*world_focus != i, egui::Button::new("V"))
 				.on_hover_ui(|ui| _ = ui.label("View slot inventory"))
 				.clicked()
 			{
-				*world_focus = Some(i);
+				*world_focus = i;
 			}
 		});
 		let response = ui.add(
@@ -492,14 +511,24 @@ impl App {
 	fn panel_hack_top_ui(&mut self, ui: &mut egui::Ui) {
 		// world file management
 		ui.horizontal(|ui| {
-			if ui.button("New").clicked() && (!self.world_dirty || dialog_overwrite_unsaved()) {
+			let (new, open, save, save_as) = ui.input_mut(|input| {
+				(
+					input.consume_shortcut(&SHORTCUT_NEW),
+					input.consume_shortcut(&SHORTCUT_OPEN),
+					input.consume_shortcut(&SHORTCUT_SAVE),
+					input.consume_shortcut(&SHORTCUT_SAVE_AS),
+				)
+			});
+			if (ui.button("New").clicked() || new)
+				&& (!self.world_dirty || dialog_overwrite_unsaved())
+			{
 				log::info!("Resetting world");
 				self.world_path = None;
 				self.world_dirty = false;
-				self.world_focus = None;
+				self.world_focus = 0;
 				self.world = World::default();
 			}
-			if ui.button("Open").clicked()
+			if (ui.button("Open").clicked() || open)
 				&& let Some(path) = self
 					.dialog_filepicker_ainv()
 					.set_title("Open world file")
@@ -511,7 +540,7 @@ impl App {
 							log::info!("Loading world");
 							self.world_path = Some(path);
 							self.world_dirty = false;
-							self.world_focus = None;
+							self.world_focus = 0;
 							self.world = new_world;
 						}
 					}
@@ -540,11 +569,11 @@ impl App {
 						});
 					});
 				})
-				.clicked()
+				.clicked() || (self.world_path.is_some() && save)
 			{
 				self.save_world(ui);
 			}
-			if ui.button("Save As").clicked()
+			if (ui.button("Save As").clicked() || save_as)
 				&& let Some(path) = self
 					.dialog_filepicker_ainv()
 					.set_title("Save world file")
@@ -689,8 +718,9 @@ impl App {
 										.clicked()
 									{
 										let focused_slot_id = self
-											.world_focus
-											.and_then(|slot| self.world.slots.get(slot))
+											.world
+											.slots
+											.get(self.world_focus)
 											.map(|slot| slot.id);
 										self.world.slots.sort_by(|l, r| l.name.cmp(&r.name));
 										self.world_focus = focused_slot_id
@@ -701,7 +731,8 @@ impl App {
 													.enumerate()
 													.find(|(_, slot)| slot.id == id)
 											})
-											.map(|(i, _)| i);
+											.map(|(i, _)| i)
+											.unwrap_or_default();
 										modified = true;
 									}
 									if ui
@@ -816,12 +847,13 @@ impl App {
 					});
 			});
 		let slot_count = self.world.slots.len();
-		if let Some(slot_index) = &mut self.world_focus
-			&& let Some(slot) = self.world.slots.get_mut(*slot_index)
-		{
-			if self.slot_view.ui(slot, slot_index, slot_count, ui, || {
-				Self::dialog_filepicker_csv(self.world_path.as_deref(), &self.storage_dir)
-			}) {
+		self.world_focus = self.world_focus.min(slot_count.saturating_sub(1));
+		if let Some(slot) = self.world.slots.get_mut(self.world_focus) {
+			if self
+				.slot_view
+				.ui(slot, &mut self.world_focus, slot_count, ui, || {
+					Self::dialog_filepicker_csv(self.world_path.as_deref(), &self.storage_dir)
+				}) {
 				self.modified_world(ui);
 			}
 		} else {
