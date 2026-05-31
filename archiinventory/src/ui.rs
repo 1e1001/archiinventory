@@ -281,7 +281,11 @@ impl SlotView {
 			});
 		});
 		egui::CentralPanel::default().show_inside(ui, |ui| {
-			ui.heading(format!("{} ({})", slot.name, slot.game));
+			if slot.game.is_empty() {
+				ui.heading(&slot.name);
+			} else {
+				ui.heading(format!("{} ({})", slot.name, slot.game));
+			}
 			// TODO: column for most recent time?
 			egui_extras::TableBuilder::new(ui)
 				.striped(true)
@@ -667,7 +671,7 @@ impl App {
 				let screen_size = ui.available_size();
 				let style_item_spacing_y = ui.style().spacing.item_spacing.y;
 				let response = ui.place(ui.max_rect(), PanelHack(self));
-				ui.set_min_width(response.rect.max.x);
+				ui.set_min_width(response.rect.max.x, min(ui.max_rect().width()));
 				ui.add_space(response.rect.min.y - style_item_spacing_y);
 
 				// world setup (connection info & slot names)
