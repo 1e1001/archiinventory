@@ -13,6 +13,7 @@ use crate::data::{InstanceLocalId, World, WorldItem, WorldSlot};
 
 const OSSTR_VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/osstr.txt"));
 
+// TODO: macro these up
 const SHORTCUT_NEW: egui::KeyboardShortcut =
 	egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::N);
 const SHORTCUT_OPEN: egui::KeyboardShortcut =
@@ -22,6 +23,10 @@ const SHORTCUT_SAVE: egui::KeyboardShortcut =
 const SHORTCUT_SAVE_AS: egui::KeyboardShortcut = egui::KeyboardShortcut::new(
 	egui::Modifiers::CTRL.plus(egui::Modifiers::SHIFT),
 	egui::Key::S,
+);
+const SHORTCUT_DEBUG_TOGGLE: egui::KeyboardShortcut = egui::KeyboardShortcut::new(
+	egui::Modifiers::CTRL.plus(egui::Modifiers::SHIFT),
+	egui::Key::D,
 );
 const SHORTCUT_SLOT_PREV: egui::KeyboardShortcut =
 	egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::ArrowLeft);
@@ -363,6 +368,7 @@ pub struct App {
 	world_focus: usize,
 	slot_view: SlotView,
 	connection: Option<Connection>,
+	debug_editing_enable: bool,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -403,6 +409,7 @@ impl App {
 			world_focus: 0,
 			slot_view: SlotView::default(),
 			connection: None,
+			debug_editing_enable: false,
 		};
 		app.refresh_window_title(&cc.egui_ctx);
 		app
@@ -524,6 +531,7 @@ impl App {
 		// world file management
 		ui.horizontal(|ui| {
 			let (new, open, save, save_as) = ui.input_mut(|input| {
+				self.debug_editing_enable ^= input.consume_shortcut(&SHORTCUT_DEBUG_TOGGLE);
 				(
 					input.consume_shortcut(&SHORTCUT_NEW),
 					input.consume_shortcut(&SHORTCUT_OPEN),
@@ -813,7 +821,7 @@ impl App {
 								}
 								// do not add any more elements here, they will be invisible
 							});
-						if ui.input(|input| input.modifiers.alt) {
+						if self.debug_editing_enable {
 							let mut data = self
 								.world
 								.banished_games
