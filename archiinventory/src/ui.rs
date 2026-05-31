@@ -407,28 +407,26 @@ impl App {
 		app.refresh_window_title(&cc.egui_ctx);
 		app
 	}
-	fn save_world(&mut self, ui: &mut egui::Ui) {
+	fn save_world(&mut self, ui: &mut egui::Ui, force_save_as: bool) {
+		// "save as" dialog
+		if force_save_as || self.world_path.is_none() {
+			if let Some(path) = self
+				.dialog_filepicker_ainv()
+				.set_title("Save world file")
+				.set_file_name(format!("{}.ainv", self.world.name))
+				.save_file()
+			{
+				self.world_path = Some(path);
+			} else {
+				return;
+			}
+		}
 		log::info!("Saving world");
-		if let Err(err) = self.world.save(
-			self.world_path
-				.as_ref()
-				.expect("save_world called without path set"),
-		) {
+		if let Err(err) = self.world.save(self.world_path.as_ref().unwrap()) {
 			dialog_error("Failed to save world", &err);
 		} else {
 			self.world_dirty = false;
 			self.refresh_window_title(ui);
-		}
-	}
-	fn try_save_as(&mut self, ui: &mut egui::Ui) {
-		if let Some(path) = self
-			.dialog_filepicker_ainv()
-			.set_title("Save world file")
-			.set_file_name(format!("{}.ainv", self.world.name))
-			.save_file()
-		{
-			self.world_path = Some(path);
-			self.save_world(ui);
 		}
 	}
 	fn dialog_filepicker_base(world_path: Option<&Path>, storage_dir: &Path) -> rfd::FileDialog {
@@ -587,10 +585,10 @@ impl App {
 				})
 				.clicked() || (self.world_path.is_some() && save)
 			{
-				self.save_world(ui);
+				self.save_world(ui, false);
 			}
 			if ui.button("Save As").clicked() || save_as {
-				self.try_save_as(ui);
+				self.save_world(ui, true);
 			}
 			//ui.add_space(8.0);
 			//if ui.button("Help").clicked() {
@@ -639,13 +637,7 @@ impl App {
 				.set_buttons(rfd::MessageButtons::YesNoCancel)
 				.show()
 			{
-				rfd::MessageDialogResult::Yes => {
-					if self.world_path.is_some() {
-						self.save_world(ui);
-					} else {
-						self.try_save_as(ui);
-					}
-				}
+				rfd::MessageDialogResult::Yes => self.save_world(ui, false),
 				rfd::MessageDialogResult::No => {}
 				_ => ui
 					.ctx()
