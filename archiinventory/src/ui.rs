@@ -420,6 +420,17 @@ impl App {
 			self.refresh_window_title(ui);
 		}
 	}
+	fn try_save_as(&mut self, ui: &mut egui::Ui) {
+		if let Some(path) = self
+			.dialog_filepicker_ainv()
+			.set_title("Save world file")
+			.set_file_name(format!("{}.ainv", self.world.name))
+			.save_file()
+		{
+			self.world_path = Some(path);
+			self.save_world(ui);
+		}
+	}
 	fn dialog_filepicker_base(world_path: Option<&Path>, storage_dir: &Path) -> rfd::FileDialog {
 		rfd::FileDialog::new()
 			.set_directory(world_path.and_then(Path::parent).unwrap_or(storage_dir))
@@ -578,15 +589,8 @@ impl App {
 			{
 				self.save_world(ui);
 			}
-			if (ui.button("Save As").clicked() || save_as)
-				&& let Some(path) = self
-					.dialog_filepicker_ainv()
-					.set_title("Save world file")
-					.set_file_name(format!("{}.ainv", self.world.name))
-					.save_file()
-			{
-				self.world_path = Some(path);
-				self.save_world(ui);
+			if ui.button("Save As").clicked() || save_as {
+				self.try_save_as(ui);
 			}
 			//ui.add_space(8.0);
 			//if ui.button("Help").clicked() {
@@ -635,7 +639,13 @@ impl App {
 				.set_buttons(rfd::MessageButtons::YesNoCancel)
 				.show()
 			{
-				rfd::MessageDialogResult::Yes => self.save_world(ui),
+				rfd::MessageDialogResult::Yes => {
+					if self.world_path.is_some() {
+						self.save_world(ui);
+					} else {
+						self.try_save_as(ui);
+					}
+				}
 				rfd::MessageDialogResult::No => {}
 				_ => ui
 					.ctx()
@@ -829,32 +839,6 @@ impl App {
 								modified = true;
 							}
 						}
-						//if ui
-						//	.add_visible(
-						//		,
-						//		egui::Button::new(format!(
-						//			"Debug: banished_games = {:?}",
-						//			self.world.banished_games.as_deref().unwrap_or_default()
-						//		)),
-						//	)
-						//	.clicked() && let Some(path) = {
-						//	rfd::FileDialog::new()
-						//		.add_filter("text", &["txt"])
-						//		.set_directory(
-						//			self.world_path
-						//				.as_deref()
-						//				.and_then(Path::parent)
-						//				.unwrap_or(&self.storage_dir),
-						//		)
-						//}
-						//.pick_file()
-						//{
-						//	match read_to_string(path) {
-						//		Ok(data) => {
-						//		}
-						//		Err(err) => dialog_error("", &err.into()),
-						//	}
-						//}
 						if modified {
 							self.modified_world(ui);
 						}
