@@ -1,3 +1,4 @@
+use std::cmp::Reverse;
 use std::ffi::OsString;
 use std::mem::replace;
 use std::path::{Path, PathBuf, SEPARATORS};
@@ -125,25 +126,89 @@ fn dialog_error(title: &str, err: &anyhow::Error) {
 		.show();
 }
 
+fn fuzzy_matches(needle: &str, haystack: &str) -> bool {
+	let mut needle_iter = needle.chars().peekable();
+	for ch in haystack.chars() {
+		match needle_iter.peek() {
+			None => return true,
+			// TODO: extend to case insensitive unicode match?
+			Some(c) if ch.eq_ignore_ascii_case(c) => _ = needle_iter.next(),
+			Some(_) => {}
+		}
+	}
+	needle_iter.peek().is_none()
+}
+
 // true = reverse order
 #[derive(Clone, Copy)]
 enum SlotViewSort {
 	Count(bool),
-	RecentCount(bool),
-	ItemName(bool),
+	// sort by recent quantity is somewhat meaningless for resolving ties, so instead it's its own setting
 	PercentProgression(bool),
 	PercentUseful(bool),
-	PercentTrash(bool),
+	PercentTrap(bool),
+	ItemName(bool),
 }
 impl Default for SlotViewSort {
-	fn default() -> Self { Self::Count(false) }
+	fn default() -> Self { Self::ItemName(false) }
+}
+impl SlotViewSort {
+	fn select_or_flip(self, new: Self) -> Self {
+		match (self, new) {
+			(Self::Count(prev), Self::Count(_)) => Self::Count(!prev),
+			(Self::ItemName(prev), Self::ItemName(_)) => Self::ItemName(!prev),
+			(Self::PercentProgression(prev), Self::PercentProgression(_)) => {
+				Self::PercentProgression(!prev)
+			}
+			(Self::PercentUseful(prev), Self::PercentUseful(_)) => Self::PercentUseful(!prev),
+			(Self::PercentTrap(prev), Self::PercentTrap(_)) => Self::PercentTrap(!prev),
+			(_, new) => new,
+		}
+	}
+	// expects indexes to start sorted, so that fallback sort by name
+	fn apply_sort(self, recent_first: bool, indexes: &mut [usize], items: &[SlotViewItem]) {
+		// TODO: do this in one sort step?
+		#[expect(
+			clippy::cast_precision_loss,
+			reason = "doesn't matter for quantity used"
+		)]
+		match self {
+			SlotViewSort::Count(false) => indexes.sort_by_key(|&i| items[i].count),
+			SlotViewSort::Count(true) => indexes.sort_by_key(|&i| Reverse(items[i].count)),
+			SlotViewSort::PercentProgression(false) => indexes
+				.sort_by_key(|&i| (items[i].progression as f32 / items[i].count as f32).to_bits()),
+			SlotViewSort::PercentProgression(true) => indexes.sort_by_key(|&i| {
+				Reverse((items[i].progression as f32 / items[i].count as f32).to_bits())
+			}),
+			SlotViewSort::PercentUseful(false) => {
+				indexes
+					.sort_by_key(|&i| (items[i].useful as f32 / items[i].count as f32).to_bits());
+			}
+			SlotViewSort::PercentUseful(true) => indexes.sort_by_key(|&i| {
+				Reverse((items[i].useful as f32 / items[i].count as f32).to_bits())
+			}),
+			SlotViewSort::PercentTrap(false) => {
+				indexes.sort_by_key(|&i| (items[i].trap as f32 / items[i].count as f32).to_bits());
+			}
+			SlotViewSort::PercentTrap(true) => indexes.sort_by_key(|&i| {
+				Reverse((items[i].trap as f32 / items[i].count as f32).to_bits())
+			}),
+			SlotViewSort::ItemName(false) => indexes.sort_by_key(|&i| items[i].name),
+			SlotViewSort::ItemName(true) => indexes.sort_by_key(|&i| Reverse(items[i].name)),
+		}
+		if recent_first {
+			// false comes first
+			indexes.sort_by_key(|&i| items[i].recent_count == 0);
+		}
+	}
 }
 
 struct SlotViewItem {
-	count: usize,
-	recent_count: usize,
 	id: i64,
 	name: Ustr,
+	// these counts are refreshed by sub-category filters (not implemented)
+	count: usize,
+	recent_count: usize,
 	progression: usize,
 	useful: usize,
 	trap: usize,
@@ -155,9 +220,12 @@ struct SlotViewItem {
 struct SlotView {
 	slot_id: InstanceLocalId,
 	sort_by: SlotViewSort,
+	recent_first: bool,
 	filter_name: String,
 	items: Vec<SlotViewItem>,
 	filtered_indexes: Vec<usize>,
+	filtered_indexes_stale: bool,
+	viewing_item: Option<usize>,
 }
 
 impl SlotView {
@@ -204,7 +272,8 @@ impl SlotView {
 			}
 			self.items = items_set.into_values().collect();
 			self.items.sort_by_key(|i| i.name);
-			self.filtered_indexes = (0..self.items.len()).collect();
+			self.filtered_indexes_stale = true;
+			self.viewing_item = None;
 		}
 		let mut modified = false;
 		// ui
@@ -219,13 +288,13 @@ impl SlotView {
 					)
 				});
 				if ui
-					.add_enabled(*slot_index > 0, egui::Button::new("<"))
+					.add_enabled(*slot_index > 0, egui::Button::new("Prev"))
 					.clicked() || (prev && *slot_index > 0)
 				{
 					*slot_index -= 1;
 				}
 				if ui
-					.add_enabled(*slot_index + 1 < slot_count, egui::Button::new(">"))
+					.add_enabled(*slot_index + 1 < slot_count, egui::Button::new("Next"))
 					.clicked() || (next && *slot_index + 1 < slot_count)
 				{
 					*slot_index += 1;
@@ -291,6 +360,13 @@ impl SlotView {
 				ui.heading(format!("{} ({})", slot.name, slot.game));
 			}
 			// TODO: column for most recent time?
+			// TODO: color item by modal flag combo (create colors for all 8 types)
+			#[expect(
+				clippy::cast_possible_truncation,
+				clippy::cast_sign_loss,
+				reason = "rough estimate anyways"
+			)]
+			let extra_rows = (ui.available_height() / 40.0) as usize;
 			egui_extras::TableBuilder::new(ui)
 				.striped(true)
 				.cell_layout(egui::Layout::default().with_cross_align(egui::Align::RIGHT))
@@ -307,34 +383,141 @@ impl SlotView {
 						ui.add_visible(false, egui::Button::new("V"));
 					});
 					header.col(|ui| {
-						ui.label("Count");
+						ui.horizontal(|ui| {
+							if ui
+								.button(match self.sort_by {
+									SlotViewSort::Count(false) => "U",
+									SlotViewSort::Count(true) => "D",
+									_ => "S",
+								})
+								.clicked()
+							{
+								self.sort_by =
+									self.sort_by.select_or_flip(SlotViewSort::Count(true));
+								self.filtered_indexes_stale = true;
+							}
+							ui.label("Count");
+						});
 					});
 					header.col(|ui| {
-						ui.label("New");
+						ui.horizontal(|ui| {
+							if ui
+								.button(if self.recent_first { "D" } else { "S" })
+								.clicked()
+							{
+								self.recent_first = !self.recent_first;
+								self.filtered_indexes_stale = true;
+							}
+							ui.label("New")
+						});
 					});
 					header.col(|ui| {
-						ui.label("Prog.%");
+						ui.horizontal(|ui| {
+							if ui
+								.button(match self.sort_by {
+									SlotViewSort::PercentProgression(false) => "U",
+									SlotViewSort::PercentProgression(true) => "D",
+									_ => "S",
+								})
+								.clicked()
+							{
+								self.sort_by = self
+									.sort_by
+									.select_or_flip(SlotViewSort::PercentProgression(true));
+								self.filtered_indexes_stale = true;
+							}
+							ui.label("Prog.");
+						});
 					});
 					header.col(|ui| {
-						ui.label("Useful%");
+						ui.horizontal(|ui| {
+							if ui
+								.button(match self.sort_by {
+									SlotViewSort::PercentUseful(false) => "U",
+									SlotViewSort::PercentUseful(true) => "D",
+									_ => "S",
+								})
+								.clicked()
+							{
+								self.sort_by = self
+									.sort_by
+									.select_or_flip(SlotViewSort::PercentUseful(true));
+								self.filtered_indexes_stale = true;
+							}
+							ui.label("Useful");
+						});
 					});
 					header.col(|ui| {
-						ui.label("Trap%");
+						ui.horizontal(|ui| {
+							if ui
+								.button(match self.sort_by {
+									SlotViewSort::PercentTrap(false) => "U",
+									SlotViewSort::PercentTrap(true) => "D",
+									_ => "S",
+								})
+								.clicked()
+							{
+								self.sort_by =
+									self.sort_by.select_or_flip(SlotViewSort::PercentTrap(true));
+								self.filtered_indexes_stale = true;
+							}
+							ui.label("Trap.");
+						});
 					});
 					header.col(|ui| {
 						ui.with_layout(egui::Layout::default(), |ui| {
-							ui.label("Name");
+							ui.horizontal(|ui| {
+								ui.label("Item name");
+								if ui
+									.button(match self.sort_by {
+										SlotViewSort::ItemName(false) => "U",
+										SlotViewSort::ItemName(true) => "D",
+										_ => "S",
+									})
+									.clicked()
+								{
+									self.sort_by =
+										self.sort_by.select_or_flip(SlotViewSort::ItemName(false));
+									self.filtered_indexes_stale = true;
+								}
+								if ui.text_edit_singleline(&mut self.filter_name).changed() {
+									self.filtered_indexes_stale = true;
+								}
+							});
 						});
 					});
 				})
 				.body(|body| {
-					body.rows(20.0, self.filtered_indexes.len(), |mut row| {
+					if self.filtered_indexes_stale {
+						self.filtered_indexes = self
+							.items
+							.iter()
+							.enumerate()
+							.filter_map(|(i, item)| {
+								fuzzy_matches(&self.filter_name, &item.name).then_some(i)
+							})
+							.collect();
+						self.sort_by.apply_sort(
+							self.recent_first,
+							&mut self.filtered_indexes,
+							&self.items,
+						);
+						self.filtered_indexes_stale = false;
+					}
+					body.rows(20.0, self.filtered_indexes.len() + extra_rows, |mut row| {
 						#[expect(clippy::cast_precision_loss, reason = "interface")]
 						fn percent(i: usize, t: usize) -> String {
 							format!("{:.0}%", 100.0 * i as f32 / t as f32)
 						}
-						let item = &self.items[self.filtered_indexes[row.index()]];
-						row.col(|ui| _ = ui.button("V"));
+						let Some(&index) = self.filtered_indexes.get(row.index()) else {
+							return;
+						};
+						let item = &self.items[index];
+						row.col(|ui| {
+							if ui.button("V").clicked() {
+								self.viewing_item = Some(index);
+							}
+						});
 						row.col(|ui| _ = ui.label(format!("{}", item.count)));
 						row.col(|ui| {
 							ui.label(if item.recent_count == 0 {
@@ -348,7 +531,8 @@ impl SlotView {
 						row.col(|ui| _ = ui.label(percent(item.trap, item.count)));
 						row.col(|ui| {
 							ui.with_layout(egui::Layout::default(), |ui| {
-								ui.label(&*item.name);
+								ui.label(&*item.name)
+									.on_hover_ui(|ui| _ = ui.label(format!("ID: {}", item.id)));
 							});
 						});
 					});
@@ -506,7 +690,7 @@ impl App {
 					*world_focus -= 1;
 				}
 			}
-			// TODO: should focus instead be by last selected textbox?
+			// TODO: change icon based on slot's unacknowledged items (how to get this info?)
 			if ui
 				.add_enabled(*world_focus != i, egui::Button::new("V"))
 				.on_hover_ui(|ui| _ = ui.label("View slot inventory"))
@@ -557,6 +741,7 @@ impl App {
 			{
 				match World::load(&path) {
 					Ok(new_world) => {
+						// TODO: replace with quit save dialog
 						if !self.world_dirty || dialog_overwrite_unsaved() {
 							log::info!("Loading world");
 							self.world_path = Some(path);
@@ -591,7 +776,7 @@ impl App {
 						});
 					});
 				})
-				.clicked() || (self.world_path.is_some() && save)
+				.clicked() || save
 			{
 				self.save_world(ui, false);
 			}
@@ -631,6 +816,7 @@ impl App {
 				if self.world.merge_interactive(slots, dialog_merge_warning) {
 					self.modified_world(ui);
 				}
+				// TODO: delete connection after this point? idk if showing "done!" is useful
 			}
 		});
 	}
@@ -673,6 +859,7 @@ impl App {
 						// awful result packing
 						res.rect.min.x = ui.cursor().height();
 						res.rect.min.y = ui.cursor().min.y;
+						// TODO: this is the wrong metric! and panel oversizing still happens
 						res.rect.max.x = top_res.rect.width();
 						res
 					}
@@ -681,11 +868,11 @@ impl App {
 				let style_item_spacing_y = ui.style().spacing.item_spacing.y;
 				let response = ui.place(ui.max_rect(), PanelHack(self));
 				ui.set_min_width(response.rect.max.x.min(ui.max_rect().width()));
-				ui.add_space(response.rect.min.y - style_item_spacing_y);
+				ui.add_space(response.rect.min.y + style_item_spacing_y);
 
 				// world setup (connection info & slot names)
 				egui::ScrollArea::vertical()
-					.max_height(response.rect.min.x)
+					.max_height(response.rect.min.x - 2.0 * style_item_spacing_y)
 					.content_margin(egui::Margin::same(8))
 					.show(ui, |ui| {
 						let mut modified = false;

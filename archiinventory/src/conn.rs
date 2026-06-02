@@ -10,8 +10,10 @@ use smol::channel::{self, Receiver, Sender, TryRecvError};
 
 use crate::data::{MergeSlots, World, WorldItem, WorldSlot};
 
-// TODO: long-running connection??
-// or maybe a "sync mode" that does that but doesn't save the data?
+// TODO: alternate connection mode using the webhost api
+// - i need to use one websocket connection to get datapackages
+// - how to get the room id?
+// also rename the connect button to "Refresh" or something
 
 #[derive(Debug)]
 enum ConnectionEvent {

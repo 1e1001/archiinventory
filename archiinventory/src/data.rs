@@ -118,6 +118,8 @@ impl Default for InstanceLocalId {
 	}
 }
 
+// TODO: adjust serialization to be more resistant to upgrading
+// some kind of "skip if default"
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct WorldSlot {
 	// TODO: additional setting to enable fetching slot (e.g. completed?)
