@@ -14,6 +14,12 @@ use crate::data::{InstanceLocalId, World, WorldItem, WorldSlot};
 
 const OSSTR_VERSION: &str = include_str!(concat!(env!("OUT_DIR"), "/osstr.txt"));
 
+// TOOD: tbh just redo a lot of ui
+// slot editing can just be a textbox lmao (slot data is just last received index + cached item list)
+// restructure things to be super modular instead of large function spam
+// maybe try simulating the event-queue system?
+// also do actual ui design layouting etc.
+
 // TODO: macro these up
 const SHORTCUT_NEW: egui::KeyboardShortcut =
 	egui::KeyboardShortcut::new(egui::Modifiers::CTRL, egui::Key::N);
@@ -138,6 +144,11 @@ fn fuzzy_matches(needle: &str, haystack: &str) -> bool {
 	}
 	needle_iter.peek().is_none()
 }
+
+// TODO: try replacing with a fixed sorting order (recent, count, prog, useful, trap, name) with toggle-able enable/reverses
+// ^ or just have filters (any, only, except) for prog/useful/trap
+
+// TODO: replace item type percentages with colored rectangle, (prog=green, useful=blue, trap=red)
 
 // true = reverse order
 #[derive(Clone, Copy)]
@@ -310,7 +321,7 @@ impl SlotView {
 					for item in &mut self.items {
 						item.recent_count = 0;
 					}
-					// TODO: resort if sorting by recent
+					self.filtered_indexes_stale = true;
 				}
 				if (ui
 					.button("Export")
@@ -690,9 +701,15 @@ impl App {
 					*world_focus -= 1;
 				}
 			}
-			// TODO: change icon based on slot's unacknowledged items (how to get this info?)
+			let has_new_items = slot
+				.inventory
+				.last()
+				.is_some_and(|item| item.time > slot.confirmed);
 			if ui
-				.add_enabled(*world_focus != i, egui::Button::new("V"))
+				.add_enabled(
+					*world_focus != i,
+					egui::Button::new(if has_new_items { "N" } else { "V" }),
+				)
 				.on_hover_ui(|ui| _ = ui.label("View slot inventory"))
 				.clicked()
 			{
@@ -802,7 +819,7 @@ impl App {
 				if ui.button("Cancel").clicked() {
 					conn.cancel();
 				}
-			} else if ui.button("Connect").clicked()
+			} else if ui.button("Refresh").clicked()
 				&& let Some(mut conn) = self
 					.connection
 					.replace(Connection::new(&self.world, ui.ctx()))

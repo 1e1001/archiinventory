@@ -118,8 +118,7 @@ impl Default for InstanceLocalId {
 	}
 }
 
-// TODO: adjust serialization to be more resistant to upgrading
-// some kind of "skip if default"
+// TODO: opt-in "recovery" parsing that substitutes missing fields with Default
 #[derive(Debug, Default, Serialize, Deserialize)]
 pub struct WorldSlot {
 	// TODO: additional setting to enable fetching slot (e.g. completed?)
@@ -131,6 +130,7 @@ pub struct WorldSlot {
 	pub confirmed: u64,
 	// if game changes between runs, our item list is kinda useless
 	pub game: Ustr,
+	// TODO: replace this with just the latest list of items from the mw, in order received.
 	// should always be sorted
 	pub inventory: Vec<WorldItem>,
 }

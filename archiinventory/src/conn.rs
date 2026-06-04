@@ -11,8 +11,8 @@ use smol::channel::{self, Receiver, Sender, TryRecvError};
 use crate::data::{MergeSlots, World, WorldItem, WorldSlot};
 
 // TODO: alternate connection mode using the webhost api
-// - i need to use one websocket connection to get datapackages
-// - how to get the room id?
+// - implement my own datapackage cache updater
+// - toggle in ui that replaces connection address/password with webhost room url
 // also rename the connect button to "Refresh" or something
 
 #[derive(Debug)]
