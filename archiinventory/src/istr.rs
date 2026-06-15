@@ -15,13 +15,12 @@ pub struct Istr(Arc<str>);
 impl Istr {
 	pub fn new(text: &str) -> Self {
 		let mut cache = STRING_CACHE.lock().unwrap();
-		match cache.get(text) {
-			Some(text) => Istr(Arc::clone(text)),
-			None => {
-				let text = Arc::from(text);
-				cache.insert(Arc::clone(&text));
-				Istr(text)
-			},
+		if let Some(text) = cache.get(text) {
+			Istr(Arc::clone(text))
+		} else {
+			let text = Arc::from(text);
+			cache.insert(Arc::clone(&text));
+			Istr(text)
 		}
 	}
 

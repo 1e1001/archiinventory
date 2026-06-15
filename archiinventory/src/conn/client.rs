@@ -41,7 +41,7 @@ impl ClientMain {
 		let Self { address, password, slots } = self;
 		let slots_len = slots.len();
 		for (i, slot) in slots.into_iter().enumerate() {
-			emit(&ConnEvent::Status(format!("{i}/{slots_len}: {slot}")))?;
+			emit(&ConnEvent::Status(format!("{}/{slots_len}: {slot}", i + 1)))?;
 			let mut client = smol::block_on(ap::Client::<()>::connect(
 				&address,
 				&slot,
@@ -109,6 +109,7 @@ impl ClientMain {
 			log::debug!("disconnected??");
 		}
 		log::info!("all done");
+		emit(&ConnEvent::Done(None))?;
 		Ok(())
 	}
 

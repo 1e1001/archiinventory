@@ -91,7 +91,7 @@ impl Connection {
 				let inner_signal = Arc::clone(&signal);
 				let thread =
 					thread::Builder::new().name("room connect".into()).spawn(move || {
-						room::connect(world, &tx, ctx, || inner_signal.load(Ordering::Relaxed));
+						room::connect(world, &tx, &ctx, || inner_signal.load(Ordering::Relaxed));
 					})?;
 				ConnState::Room {
 					rx,
@@ -165,7 +165,7 @@ impl Connection {
 						},
 						ConnEvent::Status(text) => *status = text,
 						ConnEvent::SlotData(name, total_items, inventory) => {
-							on_complete(name, total_items, inventory)
+							on_complete(name, total_items, inventory);
 						},
 					}
 				}

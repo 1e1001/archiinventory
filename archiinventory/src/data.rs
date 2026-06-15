@@ -46,6 +46,7 @@ pub struct WorldFileSlot {
 	pub name: String,
 	pub active: bool,
 	pub confirmed: usize,
+	// TODO: maybe i should save the item list actually… see how using it goes
 	#[serde(skip)]
 	pub total_items: usize,
 	#[serde(skip)]

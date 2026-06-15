@@ -56,10 +56,11 @@ struct Tracker {
 
 // TODO: cache some results in memory? refreshes aren't too frequent so i don't think it's that needed
 
+#[expect(clippy::too_many_lines, reason = "connection")]
 fn connect_inner<F: Fn() -> bool>(
 	world: WorldFile,
 	tx: &Sender<ConnEvent>,
-	ctx: egui::Context,
+	ctx: &egui::Context,
 	cancelled: F,
 ) -> anyhow::Result<()> {
 	// since threads can't be killed, we have to manually check for cancellation
@@ -72,7 +73,7 @@ fn connect_inner<F: Fn() -> bool>(
 			}
 		};
 	}
-	let mut emit = |event| -> anyhow::Result<()> {
+	let emit = |event| -> anyhow::Result<()> {
 		tx.send(event)?;
 		ctx.request_repaint();
 		Ok(())
@@ -131,7 +132,10 @@ fn connect_inner<F: Fn() -> bool>(
 	let mut new_data_packages = Vec::new();
 
 	for (i, (game, data)) in static_tracker.datapackage.into_iter().enumerate() {
-		emit(ConnEvent::Status(format!("Loading cached data packages {i}/{data_package_len}")))?;
+		emit(ConnEvent::Status(format!(
+			"Loading cached data packages {}/{data_package_len}",
+			i + 1
+		)))?;
 		if !cache::load_data_package(&cache_path, &game, &data.checksum, &mut data_packages) {
 			new_data_packages.push((game.clone(), data.checksum));
 		}
@@ -141,7 +145,8 @@ fn connect_inner<F: Fn() -> bool>(
 		for (i, (game, checksum)) in new_data_packages.iter().enumerate() {
 			if !data_packages.contains_key(&**game) {
 				emit(ConnEvent::Status(format!(
-					"Downloading data package {i}/{}: {game}",
+					"Downloading data package {}/{}: {game}",
+					i + 1,
 					new_data_packages.len()
 				)))?;
 				let datapackage = agent
@@ -204,7 +209,10 @@ fn connect_inner<F: Fn() -> bool>(
 					.entry(item)
 					.or_insert_with(|| SlotItemGroup {
 						id: item,
-						name: item_table[&item].clone(),
+						name: item_table
+							.get(&item)
+							.cloned()
+							.unwrap_or_else(|| Istr::new(&format!("Unknown Item (ID: {item})"))),
 						instances: Vec::new(),
 					})
 					.instances
@@ -213,7 +221,9 @@ fn connect_inner<F: Fn() -> bool>(
 						from_id: sender,
 						from_name: sender_name.clone(),
 						at_id: location,
-						at_name: location_table[&location].clone(),
+						at_name: location_table.get(&location).cloned().unwrap_or_else(|| {
+							Istr::new(&format!("Unknown Location (ID: {location})"))
+						}),
 						at_game: sender_game.clone(),
 						type_flags: [flags & 1 != 0, flags & 2 != 0, flags & 4 != 0],
 					});
@@ -242,10 +252,10 @@ pub fn connect<F: Fn() -> bool>(
 	world: WorldFile,
 	// TODO: package these three into one thing
 	tx: &Sender<ConnEvent>,
-	ctx: egui::Context,
+	ctx: &egui::Context,
 	cancelled: F,
 ) {
-	if let Err(err) = connect_inner(world, tx, ctx.clone(), cancelled) {
+	if let Err(err) = connect_inner(world, tx, ctx, cancelled) {
 		_ = tx.send(ConnEvent::Error(err.to_string()));
 		ctx.request_repaint();
 	}

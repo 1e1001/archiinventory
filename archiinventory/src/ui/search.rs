@@ -1,8 +1,6 @@
 use std::cmp::Reverse;
-use std::range::Range;
 
 use eframe::egui;
-use eframe::egui::text::LayoutJob;
 
 use crate::data::{SlotItemGroup, SlotItemInstance, WorldFileSlot};
 use crate::ui::{
@@ -228,7 +226,7 @@ impl SlotSearcher {
 
 	#[expect(clippy::too_many_lines, clippy::shadow_unrelated, reason = "egui")]
 	pub fn ui(&mut self, ui: &mut egui::Ui, slot: &mut WorldFileSlot) -> bool {
-		let panel_height = ui.available_size().y;
+		//let panel_height = ui.available_size().y;
 		let row_height = ui.spacing().interact_size.y;
 		let mut changed = false;
 		ui.heading(&slot.name);
@@ -256,7 +254,7 @@ impl SlotSearcher {
 			.cell_layout(egui::Layout::default().with_cross_align(egui::Align::RIGHT))
 			.columns(egui_extras::Column::auto(), 5)
 			.column(egui_extras::Column::remainder())
-			.header(20.0, |mut header| {
+			.header(row_height, |mut header| {
 				header.col(|ui| {
 					// match spacing when there are no items
 					ui.add_visible(false, egui::Button::new(ICON_VIEW_SOME));
@@ -392,8 +390,15 @@ impl SlotSearcher {
 					row.col(|ui| {
 						ui.label(format!(
 							"#{}",
-							1 + slot.total_items.saturating_sub(row_stat.last_index)
-						));
+							slot.total_items.saturating_sub(row_stat.last_index)
+						))
+						.on_hover_ui(|ui| {
+							ui.label(format!(
+								"Last received as item {} of {}",
+								row_stat.last_index + 1,
+								slot.total_items
+							));
+						});
 					});
 					row.col(|ui| {
 						let res = ui.allocate_response(ui.max_rect().size(), egui::Sense::all());
