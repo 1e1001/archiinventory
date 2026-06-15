@@ -9,6 +9,36 @@ path = "../archipelago_rs"
 default-features = false
 features = ["native-tls"]
 
+[dependencies.sanitise-file-name]
+version = "1.0.0"
+
+[dependencies.rand]
+version = "0.10.1"
+
+[dependencies.ureq]
+version = "3.3.0"
+default-features = false
+features = ["gzip", "json", "native-tls"]
+
+[dependencies.url]
+version = "2.5.8"
+
+[dependencies.serde]
+version = "1.0.228"
+features = ["derive"]
+
+[dependencies.serde_json]
+version = "1.0.150"
+
+[dependencies.csv]
+version = "1.4.0"
+
+[dependencies.z85]
+version = "3.0.7"
+
+[dependencies.simd-normalizer]
+version = "0.1.1"
+
 [dependencies.eframe]
 version = "0.34.2"
 features = ["persistence"]
@@ -17,51 +47,25 @@ features = ["persistence"]
 version = "0.34.2"
 default-features = false
 
-[dependencies.multiline-logger]
-version = "0.2.1"
-features = ["backtrace"]
-
-[dependencies.ciborium]
-version = "0.2.2"
-
 [dependencies.rfd]
 version = "0.17.2"
 default-features = false
 features = ["gtk3", "wayland"]
 
-[dependencies.anyhow]
-version = "1.0.102"
-
-[dependencies.z85]
-version = "3.0.7"
-
-[dependencies.serde]
-version = "1.0.228"
-features = ["derive"]
-
 [dependencies.smol]
 version = "2.0.2"
 
-[dependencies.ustr]
-version = "1.1.0"
+[dependencies.multiline-logger]
+version = "0.2.1"
+features = ["backtrace"]
 
-[dependencies.lzma-rust2]
-version = "0.16.3"
-default-features = false
-features = ["encoder", "lzip", "optimization", "std"]
-
-[dependencies.serde_json]
-version = "1.0.150"
-
-[dependencies.csv]
-version = "1.4.0"
+[dependencies.anyhow]
+version = "1.0.102"
 
 [dependencies.hashbrown]
 version = "0.17.1"
+features = ["serde"]
 
-# for determining osstr compatibility
-[build-dependencies.rustc_version]
-version = "0.4.1"
 
 [lints]
 workspace = true

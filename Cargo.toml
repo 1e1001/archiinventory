@@ -11,6 +11,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(rust_analyzer)'] }
 pedantic = { level = "warn", priority = -1 }
 must_use_candidate = "allow"
 similar_names = "allow"
+unnecessary_debug_formatting = "allow"
 allow_attributes_without_reason = "deny"
 
 # restriction

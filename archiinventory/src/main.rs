@@ -1,6 +1,3 @@
-﻿//#![windows_subsystem = "windows"]
-#![feature(const_path_separators)]
-
 use std::fmt;
 
 use eframe::egui;
@@ -8,15 +5,17 @@ use multiline_logger::log;
 
 use crate::ui::App;
 
-const APP_ID: &str = "archiinventory";
-
 mod conn;
 mod data;
+mod istr;
 mod ui;
 
-fn main() -> eframe::Result {
+const APP_ID: &str = "archiinventory";
+
+fn main() -> anyhow::Result<()> {
+	let client = conn::ClientMain::from_args();
 	multiline_logger::Settings {
-		title: APP_ID,
+		title: if client.is_some() { "archiinventory (client)" } else { APP_ID },
 		filters: &[
 			//("archipelago_rs", log::LevelFilter::Trace),
 			("archiinventory", log::LevelFilter::Trace),
@@ -41,6 +40,9 @@ fn main() -> eframe::Result {
 		}),
 	}
 	.init();
+	if let Some(client) = client {
+		client.run();
+	}
 	let options = eframe::NativeOptions {
 		// TODO: add my own icon
 		viewport: egui::ViewportBuilder::default()
@@ -48,5 +50,6 @@ fn main() -> eframe::Result {
 			.with_app_id(APP_ID),
 		..Default::default()
 	};
-	eframe::run_native(APP_ID, options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
+	eframe::run_native(APP_ID, options, Box::new(|cc| Ok(Box::new(App::new(cc)))))?;
+	Ok(())
 }
